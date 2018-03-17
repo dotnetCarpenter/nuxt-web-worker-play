@@ -53,15 +53,7 @@ function find (list, predicate) {
 export default (context, inject) => {
   inject('worker', {
     createWorker () {
-      const worker = new Worker()
-
-      this.workers.push(worker)
-
-      return worker
-    },
-    workers: [],
-    remove () {
-      this.workers.pop().destroy()
+      return new Worker()
     }
   })
 }

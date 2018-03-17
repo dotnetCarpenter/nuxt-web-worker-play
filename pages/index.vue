@@ -6,18 +6,27 @@
         web-worker
       </h1>
       <h2 class="subtitle">
-        {{ this.$worker.workers.length ? 'Nuxt.js project' : 'No more Web Workers to remove' }}
+        Nuxt.js project
       </h2>
-      <p>{{ $worker.workers.length }}</p>
+      <p>{{ notification }}</p>
+      <ul class="list">
+        <li>Number of Web Workers: {{ workers.length }}</li>
+        <li>Number of long Running Workers: {{ longRunningWorkers.length }}</li>
+        <li>Number of unused Workers: {{ workers.filter(w => !w.inUse).length }}</li>
+      </ul>
       <div class="links">
         <a
-          v-if="needWorkerSetup"
+          v-if="!needWorkerSetup"
           v-on:click="test"
           class="button button--green">Test Worker</a>
         <a
-          v-if="needWorkerSetup"
-          v-on:click="long(1000)"
+          v-if="!needWorkerSetup"
+          v-on:click="long(2000)"
           class="button button--green">Execute long running Worker</a>
+        <a
+          v-if="!needWorkerSetup && longRunningWorkers.length"
+          v-on:click="freeWorker"
+          class="button button--green">Free long running Worker</a>
         <a
           v-on:click="removeWorker"
           class="button button--grey">Remove Web Worker</a>
@@ -30,62 +39,90 @@
 </template>
 
 <script>
+import Vue from 'vue'
 import AppLogo from '~/components/AppLogo.vue'
 
 export default {
   components: {
     AppLogo
   },
+  computed: {
+    needWorkerSetup () {
+      return this.workers.length === 0
+    }
+  },
   data () {
     return {
-      needWorkerSetup: true,
-      testWorkers: [],
-      testIndex: 0,
+      notification: '',
+      workers: [],
       longRunningWorkers: [],
       longIndex: 0
     }
   },
+  watch: {
+    workers (workers) {
+      console.log(workers)
+      if (workers.length === 0) this.notification = 'Zero Web Workers - click "Create more Workers"'
+    }
+  },
   methods: {
     test () {
-      if (this.needWorkerSetup) return
+      console.log(this.workers)
+      const worker = this.getWorker()
 
-      let worker = this.getWorker()
-
-      // if (!worker)
-
-      worker.message({ hello: 'world' })
+      if (worker) worker.message({ hello: 'world' })
+      else this.notification = 'No more test workers available'
     },
     long (miliseconds) {
-      if (this.needWorkerSetup) this.setupWorkers()
+      let worker = this.getWorker()
 
-      const worker = this.getWorker()
+      if (worker) {
+        worker.listen(longRunningListener)
+
+        worker.inUse = true
+        Vue.set(this.workers, this.workers.indexOf(worker), worker)
+
+        this.longRunningWorkers.push(worker)
+      } else {
+        worker = this.longRunningWorkers[ this.longIndex++ % this.longRunningWorkers.length]
+      }
+
       worker.message({ action: 'expensive', time: miliseconds })
+      // if (worker) worker.message({ action: 'expensive', time: miliseconds })
+      // else this.notification = 'No more long running workers available'
+    },
+    freeWorker () {
+      const worker = this.longRunningWorkers.pop()
+      worker.unlisten(longRunningListener)
+      worker.inUse = false
+      this.notification = 'Worker freed'
     },
     removeWorker () {
-      if (this.$worker.workers.length > 0) {
-        this.$worker.remove()
-      } else {
-        this.needWorkerSetup = true
+      if (this.workers.length > 0) {
+        const worker = this.workers.pop()
+        if (this.longRunningWorkers.indexOf(worker) > -1) this.longRunningWorkers.splice(this.longRunningWorkers.indexOf(worker), 1)
+        worker.destroy()
       }
     },
     createWorkers () {
-      if (process.browser && this.needWorkerSetup) {
+      if (process.browser) {
         for(let i = 0, len = navigator.hardwareConcurrency || 1; i < len; i++) {
-          this.$worker.createWorker()
+          this.workers.push(this.$worker.createWorker())
         }
 
-        this.needWorkerSetup = false
+        this.notification = 'Go nuts!'
       }
     },
     getWorker () {
-      let i = 0
-      while (i < this.$worker.workers.length) {
-        i++
-        if (!this.$worker.workers[i].inUse) return this.$worker.workers[i]
-      }
-      return null
+      return this.workers
+        .filter(w => !w.inUse)
+        .reduce((a,b) => a || b, null)
     }
   }
+}
+
+function longRunningListener (event) {
+  console.log(`expensive made ${event.data} loops`)
 }
 </script>
 
@@ -117,5 +154,11 @@ export default {
 
 .links {
   padding-top: 15px;
+}
+
+.list {
+  text-align: left;
+  color: #526488;
+  list-style: none;
 }
 </style>
